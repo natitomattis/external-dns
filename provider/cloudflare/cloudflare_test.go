@@ -50,6 +50,7 @@ type mockCloudFlareClient struct {
 	Records               map[string]map[string]cloudflare.DNSRecord
 	Actions               []MockAction
 	listZonesError        error
+	zoneDetailsError      error
 	listZonesContextError error
 	dnsRecordsError       error
 	customHostnames       map[string][]cloudflare.CustomHostname
@@ -384,6 +385,10 @@ func (m *mockCloudFlareClient) ListZonesContext(ctx context.Context, opts ...clo
 }
 
 func (m *mockCloudFlareClient) ZoneDetails(ctx context.Context, zoneID string) (cloudflare.Zone, error) {
+	if m.zoneDetailsError != nil {
+		return cloudflare.Zone{}, m.zoneDetailsError
+	}
+
 	for id, zoneName := range m.Zones {
 		if zoneID == id {
 			return cloudflare.Zone{
@@ -771,6 +776,24 @@ func TestCloudflareZones(t *testing.T) {
 	assert.Equal(t, "bar.com", zones[0].Name)
 }
 
+//test failures on zone lookup
+func TestCloudflareZonesFailed(t *testing.T) {
+
+	client := NewMockCloudFlareClient()
+	client.zoneDetailsError = errors.New("zone lookup failed")
+
+	provider := &CloudFlareProvider{
+		Client:       client,
+		domainFilter: endpoint.NewDomainFilter([]string{"bar.com"}),
+		zoneIDFilter: provider.NewZoneIDFilter([]string{"001"}),
+	}
+
+	_, err := provider.Zones(context.Background())
+	if err == nil {
+		t.Errorf("should fail, %s", err)
+	}
+}
+
 func TestCloudFlareZonesWithIDFilter(t *testing.T) {
 	client := NewMockCloudFlareClient()
 	client.listZonesError = errors.New("shouldn't need to list zones when ZoneIDFilter in use")
@@ -941,6 +964,32 @@ func TestCloudflareProvider(t *testing.T) {
 	if err == nil {
 		t.Errorf("expected to fail")
 	}
+
+	_ = os.Setenv("CF_API_TOKEN", "file://abc")
+	_, err = NewCloudFlareProvider(
+		endpoint.NewDomainFilter([]string{"bar.com"}),
+		provider.NewZoneIDFilter([]string{""}),
+		false,
+		true,
+		5000,
+		"",
+		CustomHostnamesConfig{Enabled: false})
+	if err == nil {
+		t.Errorf("expected to fail")
+	}
+
+	_ = os.Setenv("CF_API_TOKEN", "file:/tmp/cf_api_token")
+	_, err = NewCloudFlareProvider(
+		endpoint.NewDomainFilter([]string{"bar.com"}),
+		provider.NewZoneIDFilter([]string{""}),
+		false,
+		true,
+		5000,
+		"",
+		CustomHostnamesConfig{Enabled: false})
+	if err != nil {
+		t.Errorf("should not fail, %s", err)
+	}
 }
 
 func TestCloudflareApplyChanges(t *testing.T) {
@@ -1012,6 +1061,23 @@ func TestCloudflareApplyChanges(t *testing.T) {
 	}
 }
 
+func TestCloudflareDryRunApplyChanges(t *testing.T) {
+	changes := &plan.Changes{}
+	client := NewMockCloudFlareClient()
+	provider := &CloudFlareProvider{
+		Client: client,
+		DryRun: true,
+	}
+	changes.Create = []*endpoint.Endpoint{{
+		DNSName: "new.bar.com",
+		Targets: endpoint.Targets{"target"},
+	}}
+	err := provider.ApplyChanges(context.Background(), changes)
+	if err != nil {
+		t.Errorf("should not fail, %s", err)
+	}
+}
+
 func TestCloudflareApplyChangesError(t *testing.T) {
 	changes := &plan.Changes{}
 	client := NewMockCloudFlareClient()
@@ -1026,6 +1092,20 @@ func TestCloudflareApplyChangesError(t *testing.T) {
 	if err == nil {
 		t.Errorf("should fail, %s", err)
 	}
+
+	// changes.Create = []*endpoint.Endpoint{}
+	// changes.UpdateOld = []*endpoint.Endpoint{{
+	// 	DNSName: "fizfuz.bar.com",
+	// 	Targets: endpoint.Targets{"target-old"},
+	// }}
+	// changes.UpdateNew = []*endpoint.Endpoint{{
+	// 	DNSName: "fizfuz.bar.com",
+	// 	Targets: endpoint.Targets{"target-new"},
+	// }}
+	// err = provider.ApplyChanges(context.Background(), changes)
+	// if err == nil {
+	// 	t.Errorf("should fail, %s", err)
+	// }
 }
 
 func TestCloudflareGetRecordID(t *testing.T) {
@@ -2472,3 +2552,23 @@ func TestCloudflareListCustomHostnamesWithPagionation(t *testing.T) {
 	}
 	assert.Equal(t, len(chs), CustomHostnamesNumber)
 }
+
+// The first call for dnsRecordsError should not fail 
+// func TestCloudflareListCustomHostnamesWithPagionationRateLimited(t *testing.T) {
+// 	// Create a mock client that returns a rate limit error
+// 	client := NewMockCloudFlareClient()
+// 	client.dnsRecordsError = &cloudflare.Error{
+// 		StatusCode: 429,
+// 		ErrorCodes: []int{10000},
+// 		Type:       cloudflare.ErrorTypeRateLimit,
+// 	}
+// 	p := &CloudFlareProvider{Client: client}
+
+// 	// Call the Zones function
+// 	_, err := p.listCustomHostnamesWithPagination(ctx, "001")
+
+// 	// Assert that a soft error was returned
+// 	if !errors.Is(err, provider.SoftError) {
+// 		t.Error("expected a rate limit error")
+// 	}
+// }
