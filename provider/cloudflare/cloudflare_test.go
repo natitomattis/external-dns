@@ -173,14 +173,6 @@ func (m *mockCloudFlareClient) ListDNSRecords(ctx context.Context, rc *cloudflar
 				m.DeleteDNSRecord(ctx, rc, record.ID)
 				return nil, &cloudflare.ResultInfo{}, errors.New("failed to list erroring DNS record")
 			}
-			if strings.HasPrefix(record.Name, "ratelimit-") {
-				m.DeleteDNSRecord(ctx, rc, record.ID)
-				return nil, &cloudflare.ResultInfo{}, &cloudflare.Error{
-					StatusCode: 429,
-					ErrorCodes: []int{10000},
-					Type:       cloudflare.ErrorTypeRateLimit,
-				}
-			}
 			result = append(result, record)
 		}
 	}
@@ -275,13 +267,6 @@ func (m *mockCloudFlareClient) CustomHostnames(ctx context.Context, zoneID strin
 
 	if strings.HasPrefix(zoneID, "newerror-") {
 		return nil, cloudflare.ResultInfo{}, errors.New("failed to list custom hostnames")
-	}
-	if strings.HasPrefix(zoneID, "ratelimit-") {
-		return nil, cloudflare.ResultInfo{}, &cloudflare.Error{
-			StatusCode: 429,
-			ErrorCodes: []int{10000},
-			Type:       cloudflare.ErrorTypeRateLimit,
-		}
 	}
 	if filter.Hostname != "" {
 		err = errors.New("filters are not supported for custom hostnames mock test")
@@ -1107,20 +1092,6 @@ func TestCloudflareApplyChangesError(t *testing.T) {
 	if err == nil {
 		t.Errorf("should fail, %s", err)
 	}
-
-	// changes.Create = []*endpoint.Endpoint{}
-	// changes.UpdateOld = []*endpoint.Endpoint{{
-	// 	DNSName: "fizfuz.bar.com",
-	// 	Targets: endpoint.Targets{"target-old"},
-	// }}
-	// changes.UpdateNew = []*endpoint.Endpoint{{
-	// 	DNSName: "fizfuz.bar.com",
-	// 	Targets: endpoint.Targets{"target-new"},
-	// }}
-	// err = provider.ApplyChanges(context.Background(), changes)
-	// if err == nil {
-	// 	t.Errorf("should fail, %s", err)
-	// }
 }
 
 func TestCloudflareGetRecordID(t *testing.T) {
@@ -2567,23 +2538,3 @@ func TestCloudflareListCustomHostnamesWithPagionation(t *testing.T) {
 	}
 	assert.Equal(t, len(chs), CustomHostnamesNumber)
 }
-
-// The first call for dnsRecordsError should not fail 
-// func TestCloudflareListCustomHostnamesWithPagionationRateLimited(t *testing.T) {
-// 	// Create a mock client that returns a rate limit error
-// 	client := NewMockCloudFlareClient()
-// 	client.dnsRecordsError = &cloudflare.Error{
-// 		StatusCode: 429,
-// 		ErrorCodes: []int{10000},
-// 		Type:       cloudflare.ErrorTypeRateLimit,
-// 	}
-// 	p := &CloudFlareProvider{Client: client}
-
-// 	// Call the Zones function
-// 	_, err := p.listCustomHostnamesWithPagination(ctx, "001")
-
-// 	// Assert that a soft error was returned
-// 	if !errors.Is(err, provider.SoftError) {
-// 		t.Error("expected a rate limit error")
-// 	}
-// }
