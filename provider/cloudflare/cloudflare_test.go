@@ -776,7 +776,7 @@ func TestCloudflareZones(t *testing.T) {
 	assert.Equal(t, "bar.com", zones[0].Name)
 }
 
-//test failures on zone lookup
+// test failures on zone lookup
 func TestCloudflareZonesFailed(t *testing.T) {
 
 	client := NewMockCloudFlareClient()
