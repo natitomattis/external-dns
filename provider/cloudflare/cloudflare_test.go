@@ -173,6 +173,14 @@ func (m *mockCloudFlareClient) ListDNSRecords(ctx context.Context, rc *cloudflar
 				m.DeleteDNSRecord(ctx, rc, record.ID)
 				return nil, &cloudflare.ResultInfo{}, errors.New("failed to list erroring DNS record")
 			}
+			if strings.HasPrefix(record.Name, "ratelimit-") {
+				m.DeleteDNSRecord(ctx, rc, record.ID)
+				return nil, &cloudflare.ResultInfo{}, &cloudflare.Error{
+					StatusCode: 429,
+					ErrorCodes: []int{10000},
+					Type:       cloudflare.ErrorTypeRateLimit,
+				}
+			}
 			result = append(result, record)
 		}
 	}
@@ -267,6 +275,13 @@ func (m *mockCloudFlareClient) CustomHostnames(ctx context.Context, zoneID strin
 
 	if strings.HasPrefix(zoneID, "newerror-") {
 		return nil, cloudflare.ResultInfo{}, errors.New("failed to list custom hostnames")
+	}
+	if strings.HasPrefix(zoneID, "ratelimit-") {
+		return nil, cloudflare.ResultInfo{}, &cloudflare.Error{
+			StatusCode: 429,
+			ErrorCodes: []int{10000},
+			Type:       cloudflare.ErrorTypeRateLimit,
+		}
 	}
 	if filter.Hostname != "" {
 		err = errors.New("filters are not supported for custom hostnames mock test")
